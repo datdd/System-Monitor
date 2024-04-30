@@ -1,33 +1,54 @@
+#include "process.h"
+
 #include <unistd.h>
+
 #include <cctype>
 #include <sstream>
 #include <string>
 #include <vector>
 
-#include "process.h"
+#include "linux_parser.h"
+#include <ncurses.h>
+#include <process.h>
 
 using std::string;
 using std::to_string;
 using std::vector;
 
-// TODO: Return this process's ID
-int Process::Pid() { return 0; }
+Process::Process(int pid)
+    : pid_(pid), prevTotalJiffies(0), prevActiveJiffies(0) {}
 
-// TODO: Return this process's CPU utilization
-float Process::CpuUtilization() { return 0; }
+int Process::Pid() const { return pid_; }
 
-// TODO: Return the command that generated this process
-string Process::Command() { return string(); }
+float Process::CpuUtilization() const { return cpu_; }
 
-// TODO: Return this process's memory utilization
-string Process::Ram() { return string(); }
+float Process::CalculateCpuUtilization(long totalDiffJiffies) {
+  // Calculate the jiffies of the current process
+  long activeJiffies = LinuxParser::ActiveJiffies(Pid());
+  // Calculate the differences
+  long activeDiff = activeJiffies - prevActiveJiffies;
+  // Update the previous jiffies
+  prevActiveJiffies = activeJiffies;
+  // Calculate the CPU utilization
+  cpu_ = totalDiffJiffies > 0
+             ? static_cast<float>(activeDiff) / totalDiffJiffies
+             : 0.0;
 
-// TODO: Return the user (name) that generated this process
-string Process::User() { return string(); }
+  return cpu_;
+}
 
-// TODO: Return the age of this process (in seconds)
-long int Process::UpTime() { return 0; }
+string Process::Command() { return LinuxParser::Command(Pid()); }
+string Process::Ram() { return LinuxParser::Ram(Pid()); }
+string Process::User() { return LinuxParser::User(Pid()); }
+long int Process::UpTime() { return LinuxParser::UpTime(Pid()); }
+bool Process::operator<(const Process& other) const {
+  // Prioritize comparing by CPU utilization
+  if (CpuUtilization() < other.CpuUtilization()) {
+    return true;
+  } else if (CpuUtilization() > other.CpuUtilization()) {
+    return false;
+  }
 
-// TODO: Overload the "less than" comparison operator for Process objects
-// REMOVE: [[maybe_unused]] once you define the function
-bool Process::operator<(Process const& a[[maybe_unused]]) const { return true; }
+  // If CPU utilization is equal, compare by process ID (PID)
+  return Pid() < other.Pid();
+}

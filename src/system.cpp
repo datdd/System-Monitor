@@ -1,38 +1,65 @@
+#include "system.h"
+
+#include <dirent.h>
+#include <ncurses.h>
 #include <unistd.h>
+
+#include <algorithm>
 #include <cstddef>
 #include <set>
 #include <string>
 #include <vector>
 
+#include "linux_parser.h"
 #include "process.h"
 #include "processor.h"
-#include "system.h"
 
 using std::set;
 using std::size_t;
 using std::string;
 using std::vector;
 
-// TODO: Return the system's CPU
 Processor& System::Cpu() { return cpu_; }
 
-// TODO: Return a container composed of the system's processes
-vector<Process>& System::Processes() { return processes_; }
+// A vector of all Process objects in the system
+vector<Process>& System::Processes() {
+  // Get current process IDs
+  vector<int> pids = LinuxParser::Pids();
+  set<int> curPidSet(pids.begin(), pids.end());
 
-// TODO: Return the system's kernel identifier (string)
-std::string System::Kernel() { return string(); }
+  // Last set of PIDs
+  set<int> lastPidSet;
+  for (const Process& process : processes_) {
+    lastPidSet.insert(process.Pid());
+  }
 
-// TODO: Return the system's memory utilization
-float System::MemoryUtilization() { return 0.0; }
+  // Remove processes not in the current list of PIDs
+  processes_.erase(remove_if(processes_.begin(), processes_.end(),
+                             [&](const Process& p) {
+                               return curPidSet.find(p.Pid()) ==
+                                      curPidSet.end();
+                             }),
+                   processes_.end());
 
-// TODO: Return the operating system name
-std::string System::OperatingSystem() { return string(); }
+  // Add new processes
+  Processor processor = Cpu();
+  for (int pid : pids) {
+    if (lastPidSet.find(pid) == lastPidSet.end()) {
+      processes_.emplace_back(Process(pid));
+    }
+  }
+  for (Process& p : processes_) {
+    p.CalculateCpuUtilization(processor.DiffJiffies());
+  }
 
-// TODO: Return the number of processes actively running on the system
-int System::RunningProcesses() { return 0; }
+  std::sort(processes_.begin(), processes_.end());
+  std::reverse(processes_.begin(), processes_.end());
+  return processes_;
+}
 
-// TODO: Return the total number of processes on the system
-int System::TotalProcesses() { return 0; }
-
-// TODO: Return the number of seconds since the system started running
-long int System::UpTime() { return 0; }
+std::string System::Kernel() { return LinuxParser::Kernel(); }
+float System::MemoryUtilization() { return LinuxParser::MemoryUtilization(); }
+std::string System::OperatingSystem() { return LinuxParser::OperatingSystem(); }
+int System::RunningProcesses() { return LinuxParser::RunningProcesses(); }
+int System::TotalProcesses() { return LinuxParser::TotalProcesses(); }
+long int System::UpTime() { return LinuxParser::UpTime(); }
